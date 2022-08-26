@@ -1,0 +1,2 @@
+#!/bin/sh
+cabal repl --with-ghc=doctest --ghc-options=-Wno-unused-packages
