@@ -26,7 +26,9 @@ source-repository head
 library
   exposed-modules:
       Butler
+      Butler.Network
       Butler.Prelude
+      XStatic.Butler
   other-modules:
       Paths_butler
   hs-source-dirs:
