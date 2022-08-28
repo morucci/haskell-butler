@@ -27,11 +27,14 @@ library
   exposed-modules:
       Butler
       Butler.Clock
+      Butler.Events
       Butler.History
       Butler.Logger
       Butler.NatMap
       Butler.Network
       Butler.Prelude
+      Butler.Process
+      Butler.Processor
       XStatic.Butler
   other-modules:
       Paths_butler
@@ -253,6 +256,7 @@ test-suite spec
       ClockTest
       HistoryTest
       LoggerTest
+      ProcessorTest
       Paths_butler
   hs-source-dirs:
       test
