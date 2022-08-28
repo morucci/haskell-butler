@@ -1,4 +1,9 @@
 module Butler where
 
+import Butler.Clock
+import Butler.Motherboard
+
 demo :: IO ()
-demo = putStrLn "At your service"
+demo =
+    withMotherboard \mb -> do
+        sleep 1800_000

@@ -26,12 +26,15 @@ source-repository head
 library
   exposed-modules:
       Butler
+      Butler.Buzzer
       Butler.Clock
       Butler.Events
       Butler.History
       Butler.Logger
+      Butler.Motherboard
       Butler.NatMap
       Butler.Network
+      Butler.OS
       Butler.Prelude
       Butler.Process
       Butler.Processor
