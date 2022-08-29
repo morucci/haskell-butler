@@ -2,8 +2,8 @@
   nixConfig.bash-prompt = "[nix(butler)] ";
   inputs = {
     hspkgs.url =
-      "github:podenv/hspkgs/dd4b3e5a7d36211ae4df0270d7553afa3db8f435";
-      # "path:///srv/github.com/podenv/hspkgs";
+      "github:podenv/hspkgs/acb9b59f2dc1cfb11ffe1b1062449c8a5dc2f145";
+    # "path:///srv/github.com/podenv/hspkgs";
   };
   outputs = { self, hspkgs }:
     let
@@ -12,18 +12,33 @@
         butler = hpPrev.callCabal2nix "butler" self { };
       };
       hsPkgs = pkgs.hspkgs.extend haskellExtend;
+
+      desktop = with pkgs; [
+        nixGLIntel
+        # xvfb-run
+        xdummy
+        # tigervnc
+        x11vnc
+        xorg.xrandr
+        glxinfo
+        openbox
+        xterm
+        autocutsel
+      ];
     in {
-      packages."x86_64-linux".default = pkgs.haskell.lib.justStaticExecutables hsPkgs.butler;
+      packages."x86_64-linux".default =
+        pkgs.haskell.lib.justStaticExecutables hsPkgs.butler;
       devShell."x86_64-linux" = hsPkgs.shellFor {
         packages = p: [ p.butler ];
-        buildInputs = with pkgs; [
-          hpack
-          cabal-install
-          ghcid
-          haskell-language-server
-          fourmolu
-          hsPkgs.doctest
-        ];
+        buildInputs = with pkgs;
+          [
+            hpack
+            cabal-install
+            ghcid
+            haskell-language-server
+            fourmolu
+            hsPkgs.doctest
+          ] ++ desktop;
       };
     };
 }

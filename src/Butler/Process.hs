@@ -7,6 +7,7 @@ module Butler.Process (
     ProgramName (..),
 ) where
 
+import Data.Aeson (object)
 import Butler.Clock
 import Butler.Prelude
 import Data.Aeson (object)

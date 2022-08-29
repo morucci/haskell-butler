@@ -1,6 +1,7 @@
 module Butler.Storage (
     Storage,
     newStorage,
+    mkDir,
     syncThread,
 
     -- * Read/Write
@@ -19,7 +20,7 @@ import Prelude hiding (readFile, writeFile)
 import Butler.Clock
 import Butler.Prelude
 
-newtype StorageAddress = StorageAddress ByteString deriving newtype (Eq, Ord, Serialise, IsString)
+newtype StorageAddress = StorageAddress ByteString deriving newtype (Eq, Ord, Serialise, IsString, Semigroup)
 
 data Storage = Storage
     { rootDir :: RawFilePath
@@ -35,6 +36,11 @@ newStorage rootDir = do
     dir
         | "/" `BS.isSuffixOf` rootDir = rootDir
         | otherwise = rootDir <> "/"
+
+mkDir :: MonadIO m => Storage -> StorageAddress -> m StorageAddress
+mkDir storage (StorageAddress path) = liftIO do
+  createDirectoryIfMissing True (unsafeFrom $ storage.rootDir <> path)
+  pure (StorageAddress $ path <> "/")
 
 newStorageSTM :: RawFilePath -> STM Storage
 newStorageSTM rootDir = do

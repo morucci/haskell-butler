@@ -2,7 +2,9 @@ module Butler.WebSocket (
     WebSocketAPI,
     WebSocketServer (..),
     websocketServer,
+    splashHtml,
     ChannelName (..),
+    Workspace (..),
 ) where
 
 import Lucid
@@ -22,13 +24,20 @@ import Butler.Prelude
 import Butler.Session
 import Web.FormUrlEncoded (FromForm)
 
+newtype Workspace = Workspace Text
+    deriving newtype (Eq, Ord, Show, IsString, FromHttpApiData)
+    deriving (FromJSON, ToJSON, ToHtml) via Text
+
+instance From Workspace Text where
+    from (Workspace n) = n
+
 type AuthResp = Headers '[Header "Set-Cookie" SetCookie, Header "Set-Cookie" SetCookie] (Html ())
 
 type LoginAPI =
     QueryParam "invite" InviteID :> Get '[HTML] (Html ())
         :<|> "login" :> ReqBody '[FormUrlEncoded] LoginForm :> Post '[HTML] AuthResp
 
-type AuthAPI = Auth '[SA.JWT, SA.Cookie] SessionID :> LoginAPI
+type AuthAPI = Auth '[SA.JWT, SA.Cookie] SessionID :> (LoginAPI :<|> Capture "workspace" Workspace :> LoginAPI)
 
 data LoginForm = LoginForm
     { invite :: Maybe InviteID
@@ -38,31 +47,29 @@ data LoginForm = LoginForm
 
 instance FromForm LoginForm
 
-websocketHtml :: SessionID -> Html ()
-websocketHtml sessionID = do
-    let wsUrl = "/ws/htmx?session=" <> from sessionID
+websocketHtml :: Text -> SessionID -> Html ()
+websocketHtml pathPrefix sessionID = do
+    let wsUrl = pathPrefix <> "/ws/htmx?session=" <> from sessionID
     with div_ [id_ "display-ws", class_ "h-full", makeAttribute "hx-ext" "ws", makeAttribute "ws-connect" wsUrl] do
         with div_ [id_ "display-root", class_ "h-full"] mempty
-        script_ $ "globalThis.wsUrl = n => 'wss://' + window.location.host + '/ws/' + n + '?session=" <> from sessionID <> "';"
+        script_ $ "globalThis.wsUrl = n => 'wss://' + window.location.host + '" <> pathPrefix <> "/ws/' + n + '?session=" <> from sessionID <> "';"
 
--- with div_ [id_ "display-menu"] mempty
-
-splashHtml :: Html () -> Html ()
+splashHtml :: Monad m => HtmlT m () -> HtmlT m ()
 splashHtml content = do
     with div_ [id_ "display-lock", class_ "h-screen w-screen absolute bg-gray-100 flex flex-col"] do
         with div_ [class_ "basis-1/6 flex bg-sky-600 border-sky-800 border-b-8"] mempty
 
         with div_ [class_ "grow flex bg-sky-200 flex-col justify-center"] do
             with div_ [class_ "flex flex-row justify-center"] do
-                with div_ [class_ "p-3 rounded bg-sky-900"] do
+                with div_ [class_ "p-3 rounded"] do
                     content
 
         with div_ [class_ "basis-1/6 flex bg-sky-600 border-sky-800 border-t-8"] mempty
 
-welcomeForm :: Maybe InviteID -> Html ()
-welcomeForm inviteM = do
-    with form_ [id_ "splash-form", hxPost_ "/login"] do
-        with div_ [class_ "text-white font-semibold pb-2 flex flex-row justify-center"] do
+welcomeForm :: Text -> Maybe InviteID -> Html ()
+welcomeForm pathPrefix inviteM = do
+    with form_ [id_ "splash-form", hxPost_ (pathPrefix <> "/login")] do
+        with div_ [class_ "font-semibold pb-2 flex flex-row justify-center"] do
             "Welcome to ButlerOS"
         with (input_ mempty) [name_ "username", type_ "text", placeholder_ "What is your name?"]
         case inviteM of
@@ -73,17 +80,23 @@ cookieSettings :: CookieSettings
 cookieSettings = defaultCookieSettings{cookieIsSecure = NotSecure, cookieSameSite = SameSiteStrict, cookieXsrfSetting = Nothing}
 
 authServer :: Sessions -> (Html () -> Html ()) -> JWTSettings -> ServerT AuthAPI ProcessIO
-authServer sessions mkIndexHtml jwtSettings auth = loginServer
+authServer sessions mkIndexHtml jwtSettings auth =
+    let loginSrv = loginServer sessions mkIndexHtml jwtSettings auth
+     in loginSrv Nothing :<|> (loginSrv . Just)
+
+loginServer :: Sessions -> (Html () -> Html ()) -> JWTSettings -> AuthResult SessionID -> Maybe Workspace -> ServerT LoginAPI ProcessIO
+loginServer sessions mkIndexHtml jwtSettings auth workspaceM = indexRoute auth :<|> getSessionRoute workspaceM
   where
-    loginServer :: ServerT LoginAPI ProcessIO
-    loginServer = indexRoute auth :<|> getSessionRoute
+    pathPrefix = case workspaceM of
+        Nothing -> ""
+        Just (Workspace ws) -> "/" <> ws
 
     indexRoute :: AuthResult SessionID -> Maybe InviteID -> ProcessIO (Html ())
     indexRoute ar inviteM = liftIO $ case ar of
         Authenticated sessionID -> do
             isSessionValid <- atomically (checkSession sessions sessionID)
             case isSessionValid of
-                Just _ -> pure $ mkIndexHtml $ (websocketHtml sessionID)
+                Just _ -> pure $ mkIndexHtml $ (websocketHtml pathPrefix sessionID)
                 Nothing -> loginPage
         _OtherAuth -> loginPage
       where
@@ -93,7 +106,7 @@ authServer sessions mkIndexHtml jwtSettings auth = loginServer
                 mkIndexHtml $
                     splashHtml $
                         if isValid
-                            then welcomeForm inviteM
+                            then welcomeForm pathPrefix inviteM
                             else div_ "access denied"
 
     swapSplash = with div_ [id_ "display-lock", hxSwapOob_ "outerHTML"]
@@ -111,11 +124,11 @@ authServer sessions mkIndexHtml jwtSettings auth = loginServer
         resp <- liftIO $ SAS.acceptLogin cookieSettings jwtSettings sessionID
         pure $ case resp of
             Just r -> do
-                r (swapSplash $ websocketHtml sessionID)
+                r (swapSplash $ websocketHtml pathPrefix sessionID)
             Nothing -> error "oops?!"
 
-    getSessionRoute :: LoginForm -> ProcessIO AuthResp
-    getSessionRoute form = case isValidUserName (coerce form.username) of
+    getSessionRoute :: Maybe Workspace -> LoginForm -> ProcessIO AuthResp
+    getSessionRoute workspaceM form = case isValidUserName (coerce form.username) of
         Just username -> do
             logInfo "Validating form" [("form" .= form)]
             sessionM <- createSession sessions form.username form.invite
@@ -124,13 +137,15 @@ authServer sessions mkIndexHtml jwtSettings auth = loginServer
                 Nothing -> denyResp
         Nothing -> denyResp
 
-type ClientAPI = "ws" :> Capture "channel" ChannelName :> QueryParam "reconnect" Bool :> QueryParam "session" SessionID :> WebSocket
+type ClientWSAPI = "ws" :> Capture "channel" ChannelName :> QueryParam "reconnect" Bool :> QueryParam "session" SessionID :> WebSocket
 
-clientServer :: Sessions -> (ChannelName -> Session -> WS.Connection -> ProcessIO ()) -> ServerT ClientAPI ProcessIO
-clientServer sessions onConnect = connectRoute
+type ClientAPI = ClientWSAPI :<|> (Capture "workspace" Workspace :> ClientWSAPI)
+
+clientServer :: Sessions -> (Workspace -> ChannelName -> Session -> WS.Connection -> ProcessIO ()) -> ServerT ClientAPI ProcessIO
+clientServer sessions onConnect = connectRoute Nothing :<|> connectRoute . Just
   where
-    connectRoute :: ChannelName -> Maybe Bool -> Maybe SessionID -> WS.Connection -> ProcessIO ()
-    connectRoute name (fromMaybe False -> reconnect) sessionIDM connection
+    connectRoute :: Maybe Workspace -> ChannelName -> Maybe Bool -> Maybe SessionID -> WS.Connection -> ProcessIO ()
+    connectRoute workspaceM name (fromMaybe False -> reconnect) sessionIDM connection
         | reconnect = doReload
         | otherwise = do
             isSessionValid <- atomically do
@@ -139,24 +154,25 @@ clientServer sessions onConnect = connectRoute
                     Nothing -> pure Nothing
             case isSessionValid of
                 Nothing -> doReload
-                Just session -> onConnect name session connection
+                Just session -> onConnect workspace name session connection
       where
+        workspace = case workspaceM of
+            Just ws -> ws
+            Nothing -> Workspace ""
         doReload = liftIO $ WS.sendTextData connection $ renderText do
-            with span_ [id_ "display-status"] do
+            with span_ [id_ "display-ws"] do
                 "<reconnecting...>"
                 script_ "window.location.reload()"
 
 newtype ChannelName = ChannelName Text
     deriving newtype (Eq, Show, Ord, FromHttpApiData, ToJSON, IsString)
 
-type ChannelAPI = "channel" :> Capture "name" ChannelName :> ClientAPI
-
 type WebSocketAPI = RemoteHost :> (AuthAPI :<|> ClientAPI)
 
 data WebSocketServer = WebSocketServer
     { mkIndexHtml :: Html () -> Html ()
     , jwtSettings :: JWTSettings
-    , onConnect :: SockAddr -> ChannelName -> Session -> WS.Connection -> ProcessIO ()
+    , onConnect :: SockAddr -> Workspace -> ChannelName -> Session -> WS.Connection -> ProcessIO ()
     }
 
 websocketServer :: Sessions -> WebSocketServer -> ServerT WebSocketAPI ProcessIO

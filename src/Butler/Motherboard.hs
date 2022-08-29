@@ -2,9 +2,6 @@ module Butler.Motherboard (
     Motherboard (..),
     withMotherboard,
 
-    -- * helpers
-    createProcess,
-
     -- * useful re-exports
     module Butler.Process,
     module Butler.Clock,
@@ -26,10 +23,7 @@ data Motherboard = Motherboard
     , clock :: Clock
     , logger :: Logger SystemEvent
     , buzzer :: Buzzer
-    }
-
-createProcess :: Motherboard -> Maybe Process -> ProgramName -> ProcessAction -> IO Process
-createProcess mb = startProcess mb.clock mb.logger mb.processor
+    } deriving (Generic)
 
 withMotherboard :: (Motherboard -> IO a) -> IO a
 withMotherboard action = withProcessor \processor -> do

@@ -72,6 +72,11 @@ sleep (Milli x) = liftIO $ threadDelay (unsafeFrom x * 1_000)
 data WaitResult result = WaitCompleted result | WaitTimeout
     deriving (Show)
 
+instance ToJSON result => ToJSON (WaitResult result) where
+  toJSON = \case
+    WaitCompleted res -> toJSON res
+    WaitTimeout -> "timeout"
+
 waitTransaction :: MonadIO m => Milli -> STM result -> m (STM (WaitResult result))
 waitTransaction (Milli x) action = liftIO do
     delay <- registerDelay (unsafeFrom x * 1_000)

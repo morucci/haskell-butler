@@ -3,6 +3,7 @@ module Butler.Memory (
     newMemoryVar,
     readMemoryVar,
     modifyMemoryVar,
+    stateMemoryVar,
 
     -- * re-export
     Storage,
@@ -41,3 +42,9 @@ modifyMemoryVar :: MemoryVar a -> (a -> a) -> STM ()
 modifyMemoryVar mv f = do
     modifyTVar' mv.var f
     mv.save
+
+stateMemoryVar :: MemoryVar a -> (a -> (b, a)) -> STM b
+stateMemoryVar mv f = do
+  res <- stateTVar mv.var f
+  mv.save
+  pure res

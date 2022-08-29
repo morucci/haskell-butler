@@ -6,6 +6,7 @@ module Butler.OS (
     ProcessIO,
     runProcessIO,
     getSelfProcess,
+    asProcess,
 
     -- * Memory api
     newProcessMemory,
@@ -18,6 +19,7 @@ module Butler.OS (
 
     -- * Log api
     logSystem,
+    logTrace,
     logInfo_,
     logInfo,
     logError_,
@@ -51,7 +53,6 @@ import Butler.Storage
 import Data.Aeson.KeyMap qualified as KM
 import Data.Aeson.OneLine (renderObject)
 import Data.Aeson.Types (Pair)
-import GHC.Stack
 import Ki.Unlifted qualified as Ki
 
 newtype ProcessIO a = ProcessIO (ProcessEnv -> IO a)
@@ -69,7 +70,7 @@ newtype ProcessIO a = ProcessIO (ProcessEnv -> IO a)
 data ProcessEnv = ProcessEnv
     { os :: OS
     , process :: Process
-    }
+    } deriving (Generic)
 
 runProcessIO :: OS -> Process -> ProcessIO a -> IO a
 runProcessIO os process (ProcessIO action) = action (ProcessEnv os process)
@@ -102,6 +103,9 @@ getLocName = case getCallStack callStack of
     (_logStack : (_, srcLoc) : _) -> from (srcLocModule srcLoc) <> ":" <> from (show (srcLocStartLine srcLoc))
     _ -> "N/C"
 
+logTrace :: HasCallStack => Text -> [Pair] -> ProcessIO ()
+logTrace = processLog getLocName EventTrace
+
 logInfo_ :: HasCallStack => Text -> ProcessIO ()
 logInfo_ msg = processLog getLocName EventInfo msg []
 
@@ -125,6 +129,9 @@ spawnProcess name (ProcessIO action) = do
     let mb = env.os.motherboard
     liftIO $ startProcess mb.clock mb.logger mb.processor (Just env.process) name (ProcessAction $ \p -> action (ProcessEnv env.os p))
 
+asProcess :: ProcessEnv -> ProcessIO a -> ProcessIO a
+asProcess env = local (const env)
+
 spawnThread_ :: ProcessIO Void -> ProcessIO ()
 spawnThread_ action = do
     process <- asks process
@@ -137,7 +144,7 @@ killProcess pid = do
 
 data OS = OS
     { motherboard :: Motherboard
-    }
+    } deriving (Generic)
 
 awaitProcess :: MonadIO m => Process -> m ExitReason
 awaitProcess p = atomically $ await p.thread

@@ -18,6 +18,7 @@ module Butler.Prelude (
 
     -- * base extra
     whenM,
+    module GHC.Stack,
 
     -- * relude
     Relude.putText,
@@ -33,6 +34,7 @@ module Butler.Prelude (
 
     -- * lens
     (%~),
+    (.~),
     (^?),
     Control.Lens.set,
     Control.Lens.over,
@@ -120,6 +122,7 @@ module Butler.Prelude (
     Data.Aeson.toJSON,
     Data.Aeson.Result (..),
     encodeJSON,
+    Data.Aeson.object,
 
     -- * xstatic
     module XStatic,
@@ -127,6 +130,7 @@ module Butler.Prelude (
     -- * Convertion
     Witch.From,
     Witch.from,
+    Witch.tryFrom,
     Witch.into,
     Witch.via,
     Witch.unsafeFrom,
@@ -179,6 +183,7 @@ import Debug.Trace
 import Foreign.C.Types
 import GHC.Generics qualified
 import GHC.Records qualified
+import GHC.Stack
 import GHC.TypeLits qualified
 import Ki
 import Lucid
